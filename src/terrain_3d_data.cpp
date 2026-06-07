@@ -510,6 +510,29 @@ void Terrain3DData::set_height_region(const Vector2i &p_region_loc, const Rect2i
 	}
 }
 
+void Terrain3DData::set_height_partial(const Vector2i &p_region_loc, const Ref<Image> &p_sub, const Vector2i &p_offset) {
+	// Blit only the edited rect into the region's CPU height image (keeping it
+	// whole-correct for save), mark it edited, and record the dirty rect for the
+	// sub-rect GPU upload — so an edit costs the brush, not the whole region (no
+	// whole-region extract + Image rebuild). The CPU image stays FORMAT_RF.
+	Terrain3DRegion *region = get_region_ptr(p_region_loc);
+	if (!region || p_sub.is_null()) {
+		return;
+	}
+	Ref<Image> hmap = region->get_height_map();
+	if (hmap.is_null()) {
+		return;
+	}
+	hmap->blit_rect(p_sub, Rect2i(0, 0, p_sub->get_width(), p_sub->get_height()), p_offset);
+	region->set_edited(true);
+	Rect2i r(p_offset, Vector2i(p_sub->get_width(), p_sub->get_height()));
+	if (_dirty_rects.has(p_region_loc)) {
+		_dirty_rects[p_region_loc] = _dirty_rects[p_region_loc].merge(r);
+	} else {
+		_dirty_rects[p_region_loc] = r;
+	}
+}
+
 void Terrain3DData::update_maps(const MapType p_map_type, const bool p_all_regions, const bool p_generate_mipmaps) {
 	// Generate region color mipmaps
 	if (p_generate_mipmaps && (p_map_type == TYPE_COLOR || p_map_type == TYPE_MAX)) {
@@ -1269,6 +1292,7 @@ void Terrain3DData::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_height_encode_range"), &Terrain3DData::get_height_encode_range);
 	ClassDB::bind_method(D_METHOD("is_height_16bit_active"), &Terrain3DData::is_height_16bit_active);
 	ClassDB::bind_method(D_METHOD("set_height_region", "region_loc", "texel_rect"), &Terrain3DData::set_height_region);
+	ClassDB::bind_method(D_METHOD("set_height_partial", "region_loc", "sub", "offset"), &Terrain3DData::set_height_partial);
 
 	ClassDB::bind_method(D_METHOD("set_pixel", "map_type", "global_position", "pixel"), &Terrain3DData::set_pixel);
 	ClassDB::bind_method(D_METHOD("get_pixel", "map_type", "global_position"), &Terrain3DData::get_pixel);

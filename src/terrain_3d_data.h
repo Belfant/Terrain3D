@@ -166,6 +166,7 @@ public:
 	Vector2 get_height_encode_range() const { return _height_encode_range; }
 	bool is_height_16bit_active() const;
 	void set_height_region(const Vector2i &p_region_loc, const Rect2i &p_texel_rect);
+	void set_height_partial(const Vector2i &p_region_loc, const Ref<Image> &p_sub, const Vector2i &p_offset);
 
 	void set_pixel(const MapType p_map_type, const Vector3 &p_global_position, const Color &p_pixel);
 	Color get_pixel(const MapType p_map_type, const Vector3 &p_global_position) const;
