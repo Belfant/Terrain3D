@@ -76,6 +76,11 @@ private:
 	GeneratedTexture _generated_control_maps;
 	GeneratedTexture _generated_color_maps;
 
+	// Height-only mode: skip allocating the control + color texture arrays (for
+	// projects that override the shader and never sample them). Default false =
+	// upstream behavior unchanged. Runtime-reversible via set_height_only().
+	bool _height_only = false;
+
 	// Functions
 	void _clear();
 	void _copy_paste_dfr(const Terrain3DRegion *p_src_region, const Rect2i &p_src_rect, const Rect2i &p_dst_rect, const Terrain3DRegion *p_dst_region);
@@ -137,6 +142,8 @@ public:
 	RID get_height_maps_rid() const { return _generated_height_maps.get_rid(); }
 	RID get_control_maps_rid() const { return _generated_control_maps.get_rid(); }
 	RID get_color_maps_rid() const { return _generated_color_maps.get_rid(); }
+	void set_height_only(const bool p_enabled);
+	bool get_height_only() const { return _height_only; }
 
 	void set_pixel(const MapType p_map_type, const Vector3 &p_global_position, const Color &p_pixel);
 	Color get_pixel(const MapType p_map_type, const Vector3 &p_global_position) const;

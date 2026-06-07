@@ -444,6 +444,28 @@ TypedArray<Image> Terrain3DData::get_maps(const MapType p_map_type) const {
 	return TypedArray<Image>();
 }
 
+void Terrain3DData::set_height_only(const bool p_enabled) {
+	if (_height_only == p_enabled) {
+		return;
+	}
+	LOG(INFO, "Setting height only mode: ", p_enabled);
+	_height_only = p_enabled;
+	if (_height_only) {
+		// Free the control + color GPU arrays now; update_maps skips rebuilding
+		// them while the flag is set.
+		_generated_control_maps.clear();
+		_generated_color_maps.clear();
+		_control_maps.clear();
+		_color_maps.clear();
+		emit_signal("control_maps_changed");
+		emit_signal("color_maps_changed");
+		emit_signal("maps_changed"); // material re-binds the (now invalid) RIDs
+	} else {
+		// Reversible: rebuild all arrays from the resident regions.
+		update_maps(TYPE_MAX, true, false);
+	}
+}
+
 void Terrain3DData::update_maps(const MapType p_map_type, const bool p_all_regions, const bool p_generate_mipmaps) {
 	// Generate region color mipmaps
 	if (p_generate_mipmaps && (p_map_type == TYPE_COLOR || p_map_type == TYPE_MAX)) {
@@ -528,8 +550,8 @@ void Terrain3DData::update_maps(const MapType p_map_type, const bool p_all_regio
 		emit_signal("height_maps_changed");
 	}
 
-	// Rebulid control maps if dirty
-	if (_generated_control_maps.is_dirty()) {
+	// Rebulid control maps if dirty (skipped entirely in height-only mode)
+	if (!_height_only && _generated_control_maps.is_dirty()) {
 		LOG(EXTREME, "Regenerating control texture array from regions");
 		_control_maps.clear();
 		for (int i = 0; i < _region_locations.size(); i++) {
@@ -544,8 +566,8 @@ void Terrain3DData::update_maps(const MapType p_map_type, const bool p_all_regio
 		emit_signal("control_maps_changed");
 	}
 
-	// Rebulid color maps if dirty
-	if (_generated_color_maps.is_dirty()) {
+	// Rebulid color maps if dirty (skipped entirely in height-only mode)
+	if (!_height_only && _generated_color_maps.is_dirty()) {
 		LOG(EXTREME, "Regenerating color texture array from regions");
 		_color_maps.clear();
 		for (int i = 0; i < _region_locations.size(); i++) {
@@ -574,20 +596,27 @@ void Terrain3DData::update_maps(const MapType p_map_type, const bool p_all_regio
 						emit_signal("height_maps_changed");
 						break;
 					case TYPE_CONTROL:
-						_generated_control_maps.update(region->get_control_map(), region_id);
-						emit_signal("control_maps_changed");
+						// In height-only mode the array doesn't exist (update has no RID check)
+						if (!_height_only) {
+							_generated_control_maps.update(region->get_control_map(), region_id);
+							emit_signal("control_maps_changed");
+						}
 						break;
 					case TYPE_COLOR:
-						_generated_color_maps.update(region->get_color_map(), region_id);
-						emit_signal("color_maps_changed");
+						if (!_height_only) {
+							_generated_color_maps.update(region->get_color_map(), region_id);
+							emit_signal("color_maps_changed");
+						}
 						break;
 					default:
 						_generated_height_maps.update(region->get_height_map(), region_id);
-						_generated_control_maps.update(region->get_control_map(), region_id);
-						_generated_color_maps.update(region->get_color_map(), region_id);
 						emit_signal("height_maps_changed");
-						emit_signal("control_maps_changed");
-						emit_signal("color_maps_changed");
+						if (!_height_only) {
+							_generated_control_maps.update(region->get_control_map(), region_id);
+							_generated_color_maps.update(region->get_color_map(), region_id);
+							emit_signal("control_maps_changed");
+							emit_signal("color_maps_changed");
+						}
 						break;
 				}
 			}
@@ -1175,6 +1204,8 @@ void Terrain3DData::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_height_maps_rid"), &Terrain3DData::get_height_maps_rid);
 	ClassDB::bind_method(D_METHOD("get_control_maps_rid"), &Terrain3DData::get_control_maps_rid);
 	ClassDB::bind_method(D_METHOD("get_color_maps_rid"), &Terrain3DData::get_color_maps_rid);
+	ClassDB::bind_method(D_METHOD("set_height_only", "enabled"), &Terrain3DData::set_height_only);
+	ClassDB::bind_method(D_METHOD("get_height_only"), &Terrain3DData::get_height_only);
 
 	ClassDB::bind_method(D_METHOD("set_pixel", "map_type", "global_position", "pixel"), &Terrain3DData::set_pixel);
 	ClassDB::bind_method(D_METHOD("get_pixel", "map_type", "global_position"), &Terrain3DData::get_pixel);
