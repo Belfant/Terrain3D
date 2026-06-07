@@ -5,6 +5,7 @@
 #include <godot_cpp/classes/editor_interface.hpp>
 #include <godot_cpp/classes/engine.hpp>
 #include <godot_cpp/classes/file_access.hpp>
+#include <godot_cpp/classes/rendering_server.hpp>
 #include <godot_cpp/classes/resource_saver.hpp>
 
 #include "logger.h"
@@ -466,6 +467,33 @@ void Terrain3DData::set_height_only(const bool p_enabled) {
 	}
 }
 
+void Terrain3DData::set_height_16bit(const bool p_enabled) {
+	if (_height_16bit == p_enabled) {
+		return;
+	}
+	LOG(INFO, "Setting 16-bit height mode: ", p_enabled);
+	_height_16bit = p_enabled;
+	// Rebuild the height array in the new format (clears + recreates ONLY height).
+	update_maps(TYPE_HEIGHT, true, false);
+}
+
+void Terrain3DData::set_height_encode_range(const Vector2 &p_range) {
+	if (_height_encode_range == p_range) {
+		return;
+	}
+	LOG(INFO, "Setting height encode range: ", p_range);
+	_height_encode_range = p_range;
+	if (_height_16bit) {
+		update_maps(TYPE_HEIGHT, true, false); // re-encode at the new range
+	}
+}
+
+bool Terrain3DData::is_height_16bit_active() const {
+	// Active = requested AND a RenderingDevice exists. Decided per create; under
+	// --headless / GL compatibility this stays false and the RF path is used.
+	return _height_16bit && RS->get_rendering_device() != nullptr;
+}
+
 void Terrain3DData::update_maps(const MapType p_map_type, const bool p_all_regions, const bool p_generate_mipmaps) {
 	// Generate region color mipmaps
 	if (p_generate_mipmaps && (p_map_type == TYPE_COLOR || p_map_type == TYPE_MAX)) {
@@ -544,7 +572,7 @@ void Terrain3DData::update_maps(const MapType p_map_type, const bool p_all_regio
 				return;
 			}
 		}
-		_generated_height_maps.create(_height_maps);
+		_generated_height_maps.create(_height_maps, is_height_16bit_active(), _height_encode_range);
 		calc_height_range();
 		any_changed = true;
 		emit_signal("height_maps_changed");
@@ -1206,6 +1234,11 @@ void Terrain3DData::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("get_color_maps_rid"), &Terrain3DData::get_color_maps_rid);
 	ClassDB::bind_method(D_METHOD("set_height_only", "enabled"), &Terrain3DData::set_height_only);
 	ClassDB::bind_method(D_METHOD("get_height_only"), &Terrain3DData::get_height_only);
+	ClassDB::bind_method(D_METHOD("set_height_16bit", "enabled"), &Terrain3DData::set_height_16bit);
+	ClassDB::bind_method(D_METHOD("get_height_16bit"), &Terrain3DData::get_height_16bit);
+	ClassDB::bind_method(D_METHOD("set_height_encode_range", "range"), &Terrain3DData::set_height_encode_range);
+	ClassDB::bind_method(D_METHOD("get_height_encode_range"), &Terrain3DData::get_height_encode_range);
+	ClassDB::bind_method(D_METHOD("is_height_16bit_active"), &Terrain3DData::is_height_16bit_active);
 
 	ClassDB::bind_method(D_METHOD("set_pixel", "map_type", "global_position", "pixel"), &Terrain3DData::set_pixel);
 	ClassDB::bind_method(D_METHOD("get_pixel", "map_type", "global_position"), &Terrain3DData::get_pixel);

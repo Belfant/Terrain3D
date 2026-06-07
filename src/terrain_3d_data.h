@@ -81,6 +81,15 @@ private:
 	// upstream behavior unchanged. Runtime-reversible via set_height_only().
 	bool _height_only = false;
 
+	// 16-bit height mode: store the GPU height array as R16_UNORM normalized over
+	// a fixed [min,max] range (2 vs 4 bytes/texel) via RenderingDevice. Render-only:
+	// the CPU height images stay FORMAT_RF truth. Consumer shaders must remap the
+	// normalized samples (sample * span + min). Falls back to the RF path when no
+	// RenderingDevice exists (--headless dummy renderer / GL compatibility).
+	// Default false = upstream behavior unchanged.
+	bool _height_16bit = false;
+	Vector2 _height_encode_range = Vector2(0.f, 1.f);
+
 	// Functions
 	void _clear();
 	void _copy_paste_dfr(const Terrain3DRegion *p_src_region, const Rect2i &p_src_rect, const Rect2i &p_dst_rect, const Terrain3DRegion *p_dst_region);
@@ -144,6 +153,11 @@ public:
 	RID get_color_maps_rid() const { return _generated_color_maps.get_rid(); }
 	void set_height_only(const bool p_enabled);
 	bool get_height_only() const { return _height_only; }
+	void set_height_16bit(const bool p_enabled);
+	bool get_height_16bit() const { return _height_16bit; }
+	void set_height_encode_range(const Vector2 &p_range);
+	Vector2 get_height_encode_range() const { return _height_encode_range; }
+	bool is_height_16bit_active() const;
 
 	void set_pixel(const MapType p_map_type, const Vector3 &p_global_position, const Color &p_pixel);
 	Color get_pixel(const MapType p_map_type, const Vector3 &p_global_position) const;
