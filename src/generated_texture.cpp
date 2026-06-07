@@ -31,6 +31,31 @@ static PackedByteArray _encode_rf_to_u16(const Ref<Image> &p_image, const Vector
 	return out;
 }
 
+// Encode ONLY p_rect of a FORMAT_RF image as a tightly-packed R16_UNORM buffer
+// (row by row out of the full-width source). Cost scales with the rect, not the
+// whole region — the sub-rect edit win that's independent of any GPU barrier.
+static PackedByteArray _encode_rf_rect_to_u16(const Ref<Image> &p_image, const Rect2i &p_rect, const Vector2 &p_range) {
+	PackedByteArray src = p_image->get_data();
+	const float *f = (const float *)src.ptr();
+	const int img_w = p_image->get_width();
+	const float lo = p_range.x;
+	const float inv_span = 1.f / MAX(p_range.y - p_range.x, 1e-6f);
+	const int rx = p_rect.position.x, ry = p_rect.position.y;
+	const int rw = p_rect.size.x, rh = p_rect.size.y;
+	PackedByteArray out;
+	out.resize((int64_t)rw * rh * 2);
+	uint16_t *o = (uint16_t *)out.ptrw();
+	for (int j = 0; j < rh; j++) {
+		const float *row = f + (int64_t)(ry + j) * img_w + rx;
+		uint16_t *orow = o + (int64_t)j * rw;
+		for (int i = 0; i < rw; i++) {
+			float n = CLAMP((row[i] - lo) * inv_span, 0.f, 1.f);
+			orow[i] = (uint16_t)(n * 65535.f + 0.5f);
+		}
+	}
+	return out;
+}
+
 ///////////////////////////
 // Public Functions
 ///////////////////////////
@@ -47,8 +72,13 @@ void GeneratedTexture::clear() {
 		if (rd != nullptr) {
 			LOG(EXTREME, "GeneratedTexture freeing RD texture ", _rd_rid);
 			rd->free_rid(_rd_rid);
+			if (_stage_rid.is_valid()) {
+				rd->free_rid(_stage_rid);
+			}
 		}
 		_rd_rid = RID();
+		_stage_rid = RID();
+		_stage_size = Vector2i();
 	}
 	if (_image.is_valid()) {
 		LOG(EXTREME, "GeneratedTexture unref image", _image);
@@ -119,6 +149,50 @@ void GeneratedTexture::update(const Ref<Image> &p_image, const int p_layer) {
 	}
 	LOG(EXTREME, "RenderingServer updating Texture2DArray at index: ", p_layer);
 	RS->texture_2d_update(_rid, p_image, p_layer);
+}
+
+void GeneratedTexture::update_rect(const Ref<Image> &p_image, const int p_layer, const Rect2i &p_rect) {
+	if (!_rd_rid.is_valid()) {
+		// No RD texture (RF / headless): RS::texture_2d_update has no sub-rect form,
+		// so upload the whole layer. Headless stays whole-layer; in-window R16 uses
+		// the sub-rect path below.
+		update(p_image, p_layer);
+		return;
+	}
+	Rect2i rect = p_rect.intersection(Rect2i(0, 0, p_image->get_width(), p_image->get_height()));
+	if (rect.size.x <= 0 || rect.size.y <= 0) {
+		return;
+	}
+	RenderingDevice *rd = RS->get_rendering_device();
+	// (Re)create the staging texture only when the rect dims change — a steady
+	// brush drag reuses one staging texture across frames.
+	if (!_stage_rid.is_valid() || _stage_size != rect.size) {
+		if (_stage_rid.is_valid()) {
+			rd->free_rid(_stage_rid);
+		}
+		Ref<RDTextureFormat> fmt;
+		fmt.instantiate();
+		fmt->set_format(RenderingDevice::DATA_FORMAT_R16_UNORM);
+		fmt->set_width(rect.size.x);
+		fmt->set_height(rect.size.y);
+		fmt->set_depth(1);
+		fmt->set_array_layers(1);
+		fmt->set_mipmaps(1);
+		fmt->set_texture_type(RenderingDevice::TEXTURE_TYPE_2D_ARRAY); // match the dst array type
+		fmt->set_usage_bits(
+				RenderingDevice::TEXTURE_USAGE_CAN_UPDATE_BIT |
+				RenderingDevice::TEXTURE_USAGE_CAN_COPY_FROM_BIT);
+		Ref<RDTextureView> view;
+		view.instantiate();
+		_stage_rid = rd->texture_create(fmt, view, TypedArray<PackedByteArray>());
+		_stage_size = rect.size;
+	}
+	// Fill the staging texture with the rect's encoded texels, then copy it into the
+	// destination layer at the rect offset (the global RD auto-barriers the copy).
+	rd->texture_update(_stage_rid, 0, _encode_rf_rect_to_u16(p_image, rect, _encode_range));
+	rd->texture_copy(_stage_rid, _rd_rid,
+			Vector3(0, 0, 0), Vector3(rect.position.x, rect.position.y, 0),
+			Vector3(rect.size.x, rect.size.y, 1), 0, 0, 0, p_layer);
 }
 
 RID GeneratedTexture::create(const Ref<Image> &p_image) {

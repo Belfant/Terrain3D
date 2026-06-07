@@ -3,6 +3,8 @@
 #ifndef TERRAIN3D_DATA_CLASS_H
 #define TERRAIN3D_DATA_CLASS_H
 
+#include <godot_cpp/templates/hash_map.hpp>
+
 #include "constants.h"
 #include "generated_texture.h"
 #include "terrain_3d.h"
@@ -90,6 +92,11 @@ private:
 	bool _height_16bit = false;
 	Vector2 _height_encode_range = Vector2(0.f, 1.f);
 
+	// Sub-rect edit upload: per-region accumulated dirty texel rect for the next
+	// TYPE_HEIGHT flush (set via set_height_region; brush dabs union within a
+	// frame). A region present here uploads only its rect; absent → whole layer.
+	HashMap<Vector2i, Rect2i> _dirty_rects;
+
 	// Functions
 	void _clear();
 	void _copy_paste_dfr(const Terrain3DRegion *p_src_region, const Rect2i &p_src_rect, const Rect2i &p_dst_rect, const Terrain3DRegion *p_dst_region);
@@ -158,6 +165,7 @@ public:
 	void set_height_encode_range(const Vector2 &p_range);
 	Vector2 get_height_encode_range() const { return _height_encode_range; }
 	bool is_height_16bit_active() const;
+	void set_height_region(const Vector2i &p_region_loc, const Rect2i &p_texel_rect);
 
 	void set_pixel(const MapType p_map_type, const Vector3 &p_global_position, const Color &p_pixel);
 	Color get_pixel(const MapType p_map_type, const Vector3 &p_global_position) const;
