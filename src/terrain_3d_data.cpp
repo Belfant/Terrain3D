@@ -494,27 +494,12 @@ bool Terrain3DData::is_height_16bit_active() const {
 	return _height_16bit && RS->get_rendering_device() != nullptr;
 }
 
-void Terrain3DData::set_height_region(const Vector2i &p_region_loc, const Rect2i &p_texel_rect) {
-	// Mark a region edited and accumulate the changed texel rect for the next
-	// TYPE_HEIGHT flush, which then uploads only that rect (sub-rect edit upload).
-	// Brush dabs within a frame union; the consumer (update_maps) clears it.
-	Terrain3DRegion *region = get_region_ptr(p_region_loc);
-	if (!region) {
-		return;
-	}
-	region->set_edited(true);
-	if (_dirty_rects.has(p_region_loc)) {
-		_dirty_rects[p_region_loc] = _dirty_rects[p_region_loc].merge(p_texel_rect);
-	} else {
-		_dirty_rects[p_region_loc] = p_texel_rect;
-	}
-}
-
 void Terrain3DData::set_height_partial(const Vector2i &p_region_loc, const Ref<Image> &p_sub, const Vector2i &p_offset) {
 	// Blit only the edited rect into the region's CPU height image (keeping it
-	// whole-correct for save), mark it edited, and record the dirty rect for the
-	// sub-rect GPU upload — so an edit costs the brush, not the whole region (no
-	// whole-region extract + Image rebuild). The CPU image stays FORMAT_RF.
+	// whole-correct for save), mark it edited, and record a per-region dirty rect
+	// for the next TYPE_HEIGHT flush — which then uploads only that rect (sub-rect
+	// edit upload). Brush dabs within a frame union. So an edit costs the brush,
+	// not the whole region (no whole-region extract + Image rebuild). CPU stays RF.
 	Terrain3DRegion *region = get_region_ptr(p_region_loc);
 	if (!region || p_sub.is_null()) {
 		return;
@@ -1291,7 +1276,6 @@ void Terrain3DData::_bind_methods() {
 	ClassDB::bind_method(D_METHOD("set_height_encode_range", "range"), &Terrain3DData::set_height_encode_range);
 	ClassDB::bind_method(D_METHOD("get_height_encode_range"), &Terrain3DData::get_height_encode_range);
 	ClassDB::bind_method(D_METHOD("is_height_16bit_active"), &Terrain3DData::is_height_16bit_active);
-	ClassDB::bind_method(D_METHOD("set_height_region", "region_loc", "texel_rect"), &Terrain3DData::set_height_region);
 	ClassDB::bind_method(D_METHOD("set_height_partial", "region_loc", "sub", "offset"), &Terrain3DData::set_height_partial);
 
 	ClassDB::bind_method(D_METHOD("set_pixel", "map_type", "global_position", "pixel"), &Terrain3DData::set_pixel);
