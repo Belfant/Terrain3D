@@ -114,25 +114,38 @@ RID GeneratedTexture::create(const TypedArray<Image> &p_layers, const bool p_r16
 	LOG(INFO, "Creating R16_UNORM height array via RenderingDevice, layers: ", p_layers.size(), ", range: ", p_encode_range);
 	_encode_range = p_encode_range;
 	Ref<Image> first = p_layers[0];
+	// texture_rd_create refuses to wrap a 1-layer array as TEXTURE_LAYERED_2D_ARRAY
+	// (RS validation "tf.array_layers == 1"), which left single-region worlds with an
+	// invalid height RID (flat terrain + uninitialized-RID spam). Pad to 2 layers —
+	// the extra zero-filled layer costs 2 bytes/texel and nothing indexes it (the
+	// region map only ever points at real layers).
+	const int rd_layers = MAX((int)p_layers.size(), 2);
 	Ref<RDTextureFormat> fmt;
 	fmt.instantiate();
 	fmt->set_format(RenderingDevice::DATA_FORMAT_R16_UNORM);
 	fmt->set_width(first->get_width());
 	fmt->set_height(first->get_height());
 	fmt->set_depth(1);
-	fmt->set_array_layers(p_layers.size());
+	fmt->set_array_layers(rd_layers);
 	fmt->set_mipmaps(1); // height is texelFetched at mip 0 only
 	fmt->set_texture_type(RenderingDevice::TEXTURE_TYPE_2D_ARRAY);
 	fmt->set_usage_bits(
 			RenderingDevice::TEXTURE_USAGE_SAMPLING_BIT |
 			RenderingDevice::TEXTURE_USAGE_CAN_UPDATE_BIT |
-			RenderingDevice::TEXTURE_USAGE_CAN_COPY_TO_BIT); // COPY_TO: future sub-rect uploads
+			RenderingDevice::TEXTURE_USAGE_CAN_COPY_TO_BIT | // COPY_TO: sub-rect uploads
+			RenderingDevice::TEXTURE_USAGE_CAN_COPY_FROM_BIT); // COPY_FROM: texture_get_data
+			// readback, the only way in-window gates can verify GPU-side R16 content
 	Ref<RDTextureView> view;
 	view.instantiate();
 	TypedArray<PackedByteArray> data;
-	data.resize(p_layers.size());
+	data.resize(rd_layers);
 	for (int i = 0; i < p_layers.size(); i++) {
 		data[i] = _encode_rf_to_u16(p_layers[i], _encode_range);
+	}
+	for (int i = p_layers.size(); i < rd_layers; i++) {
+		PackedByteArray pad;
+		pad.resize((int64_t)first->get_width() * first->get_height() * 2); // zero-filled
+		data[i] = pad;
 	}
 	_rd_rid = rd->texture_create(fmt, view, data);
 	_rid = RS->texture_rd_create(_rd_rid, RenderingServer::TEXTURE_LAYERED_2D_ARRAY);
